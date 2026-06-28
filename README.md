@@ -35,20 +35,23 @@ O token é invalidado no logout. No login, todos os tokens anteriores do usuári
 
 ```mermaid
 graph LR
-    A([admin]) --> P1[tasks.viewAny]
-    A --> P2[tasks.view]
-    A --> P3[tasks.create]
-    A --> P4[tasks.update]
-    A --> P5[tasks.delete]
-    A --> P6[users.viewAny]
-    A --> P7[users.view]
-    A --> P8[users.update]
-    A --> P9[users.delete]
-
-    B([user]) --> P2
-    B --> P3
-    B --> P4
-    B --> P5
+    subgraph admin
+        a1["tasks.viewAny"]
+        a2["tasks.view"]
+        a3["tasks.create"]
+        a4["tasks.update"]
+        a5["tasks.delete"]
+        a6["users.viewAny"]
+        a7["users.view"]
+        a8["users.update"]
+        a9["users.delete"]
+    end
+    subgraph user
+        b1["tasks.view"]
+        b2["tasks.create"]
+        b3["tasks.update"]
+        b4["tasks.delete"]
+    end
 ```
 
 **Diferença de comportamento por role:**
@@ -68,24 +71,17 @@ graph LR
 
 ```mermaid
 sequenceDiagram
-    participant C as Cliente
-    participant A as API
-    participant DB as PostgreSQL
-
-    C->>A: POST /api/auth/login
-    A->>DB: Verifica credenciais
-    DB-->>A: Usuario encontrado
-    A->>DB: Revoga tokens anteriores
-    A->>DB: Cria novo token Sanctum
-    A-->>C: Retorna token + dados do usuario
-
-    Note over C,A: Proximas requisicoes
-
-    C->>A: GET /api/tasks com Bearer TOKEN
-    A->>DB: Valida token
-    DB-->>A: Usuario autenticado
-    A->>A: Executa TaskPolicy
-    A-->>C: Retorna lista de tarefas
+    Cliente->>API: POST /api/auth/login
+    API->>PostgreSQL: verificar credenciais
+    PostgreSQL-->>API: usuario encontrado
+    API->>PostgreSQL: revogar tokens anteriores
+    API->>PostgreSQL: criar novo token Sanctum
+    API-->>Cliente: token Bearer
+    Cliente->>API: GET /api/tasks com TOKEN
+    API->>PostgreSQL: validar token
+    PostgreSQL-->>API: usuario autenticado
+    API->>API: executar TaskPolicy
+    API-->>Cliente: lista de tarefas
 ```
 
 ---
@@ -93,16 +89,14 @@ sequenceDiagram
 ### Fluxo de Autorização (Policy)
 
 ```mermaid
-flowchart TD
-    REQ[Requisicao com Bearer Token] --> MW{auth:sanctum}
-    MW -->|invalido| E1[401 Unauthorized]
-    MW -->|valido| CT[Controller]
-    CT --> PL{Policy}
-    PL -->|admin| OK1[Acesso total]
-    PL -->|user - recurso proprio| OK2[Acesso permitido]
-    PL -->|user - recurso de outro| E2[403 Forbidden]
-    OK1 --> RES[200 Response]
-    OK2 --> RES
+graph TD
+    A[Request com Bearer Token] --> B{auth:sanctum}
+    B -->|token invalido| C[401 Unauthorized]
+    B -->|token valido| D[Controller]
+    D --> E{Policy}
+    E -->|admin| F[200 Acesso total ao recurso]
+    E -->|user dono do recurso| G[200 Acesso permitido]
+    E -->|user sem permissao| H[403 Forbidden]
 ```
 
 ---
@@ -111,12 +105,9 @@ flowchart TD
 
 ```mermaid
 graph LR
-    CLIENT([Postman / Insomnia]) -->|porta 8000| NGINX[Nginx]
-
-    subgraph Docker Network
-        NGINX -->|FastCGI 9000| APP[PHP-FPM Laravel]
-        APP -->|pgsql 5432| DB[(PostgreSQL)]
-    end
+    A[Postman] -->|HTTP 8000| B[Nginx]
+    B -->|FastCGI 9000| C[PHP-FPM]
+    C -->|pgsql 5432| D[(PostgreSQL)]
 ```
 
 ---
