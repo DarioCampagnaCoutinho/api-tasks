@@ -1,6 +1,8 @@
 # API Tasks
 
-API REST de gerenciamento de tarefas construída com **Laravel 13**, autenticação via **Laravel Sanctum** e controle de acesso com **Spatie Laravel Permission (ACL)**. Ambiente containerizado com **Docker** e banco de dados **PostgreSQL**.
+API REST **multi-tenant** de gerenciamento de tarefas construída com **Laravel 13**, autenticação via **Laravel Sanctum** e controle de acesso com **Spatie Laravel Permission (ACL)**. Ambiente containerizado com **Docker** e banco de dados **PostgreSQL**.
+
+Cada **empresa (tenant)** tem seus dados completamente isolados: usuários e tarefas de uma empresa nunca são visíveis para outra.
 
 ---
 
@@ -18,6 +20,27 @@ API REST de gerenciamento de tarefas construída com **Laravel 13**, autenticaç
 ---
 
 ## Como funciona
+
+### Multi-tenancy (isolamento por empresa)
+
+Abordagem adotada: **banco único, schema compartilhado** (*single database, shared schema*). Cada registro de negócio carrega uma coluna `company_id` que identifica o tenant.
+
+- Tabela `companies` é o tenant raiz; `users` e `tasks` possuem `company_id` (FK com `cascadeOnDelete`).
+- A trait `App\Models\Concerns\BelongsToCompany` (usada em `User` e `Task`) aplica um **Global Scope** que filtra **toda** query pela empresa do usuário autenticado — nenhuma consulta precisa lembrar de adicionar `where('company_id', ...)`.
+- A mesma trait preenche `company_id` automaticamente ao **criar** um registro.
+- Como o scope atua na própria query, o *route-model-binding* retorna **404** para recursos de outra empresa (eles simplesmente não existem para aquele tenant).
+
+```mermaid
+graph TD
+    A[Request com Bearer Token] --> B[Usuário autenticado]
+    B --> C{Global Scope BelongsToCompany}
+    C --> D["WHERE company_id = usuario.company_id"]
+    D --> E[Somente dados da empresa do usuário]
+```
+
+No **registro** (`POST /api/auth/register`), uma nova empresa é criada e o usuário que a registrou se torna o **admin** dela. Os papéis do Spatie (`admin` / `user`) são globais — o isolamento de dados vem do Global Scope, não dos papéis.
+
+---
 
 ### Autenticação
 
@@ -56,14 +79,16 @@ graph LR
 
 **Diferença de comportamento por role:**
 
+> Todas as ações abaixo já são restritas à **empresa do usuário** pelo Global Scope. "Todas as tarefas" significa todas as tarefas **da própria empresa**.
+
 | Ação | Admin | User |
 |---|---|---|
-| Listar tarefas | Vê **todas** as tarefas | Vê apenas **as suas** |
-| Ver tarefa | Qualquer tarefa | Apenas as suas |
+| Listar tarefas | Vê **todas** as tarefas da empresa | Vê apenas **as suas** |
+| Ver tarefa | Qualquer tarefa da empresa | Apenas as suas |
 | Criar tarefa | ✅ | ✅ |
-| Editar tarefa | Qualquer tarefa | Apenas as suas |
-| Excluir tarefa | Qualquer tarefa | Apenas as suas |
-| Gerenciar usuários | ✅ | ❌ (403) |
+| Editar tarefa | Qualquer tarefa da empresa | Apenas as suas |
+| Excluir tarefa | Qualquer tarefa da empresa | Apenas as suas |
+| Gerenciar usuários | ✅ (da própria empresa) | ❌ (403) |
 
 ---
 
@@ -132,16 +157,19 @@ app/
 │       ├── TaskResource.php
 │       └── UserResource.php
 ├── Models/
+│   ├── Concerns/
+│   │   └── BelongsToCompany.php   # Global Scope + auto company_id (multi-tenant)
+│   ├── Company.php                # Tenant raiz
 │   ├── Task.php
 │   └── User.php
 └── Policies/
     ├── TaskPolicy.php
     └── UserPolicy.php
 database/
-├── migrations/
+├── migrations/                    # inclui create_companies_table + company_id em users/tasks
 └── seeders/
     ├── RoleAndPermissionSeeder.php
-    └── UserSeeder.php
+    └── UserSeeder.php             # cria 2 empresas demo
 docker/
 ├── nginx/default.conf
 └── php/docker-entrypoint.sh
@@ -188,10 +216,16 @@ make test     # executa os testes
 
 ## Usuários de Seed
 
-| Email | Senha | Role |
-|---|---|---|
-| `admin@example.com` | `password` | admin |
-| `user@example.com` | `password` | user |
+O seed cria **duas empresas** para demonstrar o isolamento de dados. Todos usam a senha `password`.
+
+| Empresa | Email | Senha | Role |
+|---|---|---|---|
+| Example Inc | `admin@example.com` | `password` | admin |
+| Example Inc | `user@example.com` | `password` | user |
+| Acme Ltda | `admin@acme.com` | `password` | admin |
+| Acme Ltda | `user@acme.com` | `password` | user |
+
+> Faça login como `admin@example.com` e depois como `admin@acme.com`: cada um enxerga apenas os usuários e tarefas da própria empresa.
 
 ---
 
@@ -201,16 +235,19 @@ make test     # executa os testes
 
 | Método | Rota | Autenticação | Descrição |
 |---|---|---|---|
-| `POST` | `/api/auth/register` | ❌ | Registra novo usuário (role: `user`) |
+| `POST` | `/api/auth/register` | ❌ | Cria uma **empresa** + usuário `admin` dela |
 | `POST` | `/api/auth/login` | ❌ | Autentica e retorna Bearer Token |
 | `GET` | `/api/auth/me` | ✅ | Dados do usuário autenticado |
 | `POST` | `/api/auth/logout` | ✅ | Revoga o token atual |
 
 #### POST /api/auth/register
 
+Cria uma nova empresa (tenant) e o usuário que a registra como **admin** dela.
+
 ```json
 // Request
 {
+  "company_name": "Minha Empresa",
   "name": "João Silva",
   "email": "joao@example.com",
   "password": "password",
@@ -219,9 +256,15 @@ make test     # executa os testes
 
 // Response 201
 {
-  "data": { "id": 3, "name": "João Silva", "email": "joao@example.com", "roles": ["user"] },
+  "data": {
+    "id": 5,
+    "name": "João Silva",
+    "email": "joao@example.com",
+    "roles": ["admin"],
+    "company": { "id": 3, "name": "Minha Empresa" }
+  },
   "token": "1|abc123...",
-  "message": "Usuário registrado com sucesso."
+  "message": "Empresa e usuário registrados com sucesso."
 }
 ```
 

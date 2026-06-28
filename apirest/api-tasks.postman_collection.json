@@ -55,14 +55,14 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"João Silva\",\n  \"email\": \"joao@example.com\",\n  \"password\": \"password\",\n  \"password_confirmation\": \"password\"\n}"
+              "raw": "{\n  \"company_name\": \"Minha Empresa\",\n  \"name\": \"João Silva\",\n  \"email\": \"joao@example.com\",\n  \"password\": \"password\",\n  \"password_confirmation\": \"password\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/auth/register",
               "host": ["{{base_url}}"],
               "path": ["api", "auth", "register"]
             },
-            "description": "Registra um novo usuário. Role padrão: `user`. O token é salvo automaticamente na variável `token`."
+            "description": "Cria uma nova **empresa (tenant)** e o usuário que a registra como **admin** dela. O token é salvo automaticamente na variável `token`.\n\n**Campos:**\n- `company_name` (obrigatório) — nome da empresa\n- `name`, `email`, `password`, `password_confirmation` (obrigatórios)"
           }
         },
         {
@@ -97,7 +97,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "auth", "login"]
             },
-            "description": "Autentica o usuário e retorna um token Sanctum. Salvo automaticamente em `token`.\n\n**Usuários de seed:**\n- `admin@example.com` / `password` → role admin\n- `user@example.com` / `password` → role user"
+            "description": "Autentica o usuário e retorna um token Sanctum. Salvo automaticamente em `token`.\n\n**Usuários de seed (2 empresas demo):**\n- Example Inc: `admin@example.com` / `user@example.com`\n- Acme Ltda: `admin@acme.com` / `user@acme.com`\n\nSenha de todos: `password`. Cada empresa só enxerga os próprios dados."
           }
         },
         {
@@ -167,7 +167,7 @@
                 }
               ]
             },
-            "description": "Lista tarefas com paginação.\n- **Admin**: vê todas as tarefas de todos os usuários\n- **User**: vê apenas as próprias tarefas\n\n**Filtros disponíveis:** `status`, `priority`, `per_page`"
+            "description": "Lista tarefas com paginação. Sempre restrito à empresa do usuário autenticado.\n- **Admin**: vê todas as tarefas da empresa\n- **User**: vê apenas as próprias tarefas\n\n**Filtros disponíveis:** `status`, `priority`, `per_page`"
           }
         },
         {
@@ -264,7 +264,7 @@
                 }
               ]
             },
-            "description": "Lista todos os usuários com suas roles. **Apenas admin.**"
+            "description": "Lista os usuários **da empresa** com suas roles. **Apenas admin.**"
           }
         },
         {

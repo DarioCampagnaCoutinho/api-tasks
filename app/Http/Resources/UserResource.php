@@ -14,6 +14,10 @@ class UserResource extends JsonResource
             'name'       => $this->name,
             'email'      => $this->email,
             'roles'      => $this->getRoleNames(),
+            'company'    => $this->whenLoaded('company', fn () => [
+                'id'   => $this->company->id,
+                'name' => $this->company->name,
+            ]),
             'created_at' => $this->created_at->toISOString(),
         ];
     }
